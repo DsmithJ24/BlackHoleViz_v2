@@ -3,6 +3,7 @@
 
 // Constants
 static const float PI = 3.14159265f;
+static const float k = 0.05;
 
 // Output parameters
 RWTexture2D<float4> Position;
@@ -44,6 +45,8 @@ float beamExponent;
 float time;
 float rotationSpeed;
 float timeDelayFactor;
+float adsHoriRad
+
 
 // Brightness parameters
 float diskMult;
@@ -125,7 +128,10 @@ void CalculateGeodesicDerivative(float3 x, float3 u, out float3 dx, out float3 d
     float rs = horizonRadius;
     float th = x.y;
     float sth = sin(th);
-    float A = 1.0 - (rs / r);
+	
+// adding k^2 r^2
+    float A = 1.0 - (rs / r) + (k*k * r*r);
+    float Ap = rs/(r*r) + 2*k*k*r;
     float a = sqrt(A);
 
     // Calculate proper time derivative
@@ -135,14 +141,17 @@ void CalculateGeodesicDerivative(float3 x, float3 u, out float3 dx, out float3 d
     dx.x = A * u.x / u0;
     dx.y = u.y / (r * r * u0);
     dx.z = u.z / (r * r * sth * sth * u0);
+    /*
     du.x = 
         (-u0 * rs / (2.0 * r * r)) +
         (-u.x * u.x * rs / (2.0 * u0 * r * r)) +
         (u.y * u.y / (r * r * r * u0)) + 
         (u.z * u.z / (r * r * r * sth * sth * u0));
+    */
+    du.x = -u0 * Ap/2 - u.x * u.x * Ap/u0 + u.y * u.y/(r*r*r*u0) + u.z*u.z/(r*r*r*sth*sth*u0);
     du.y = (u.z * u.z / (r * r * sth * sth * tan(th) * u0));
-    du.z = 0.0;
-
+    du.z = 0.0; 
+    
     return;
 }
 
@@ -196,6 +205,7 @@ float CalculateStepSize(float3 x, float3 u)
 bool HorizonCheck(float3 x, float3 u)
 {
     // Check if inside of photon sphere
+    // use adsHoriRad here
     if (abs(x.x) < 1.5 * horizonRadius) {
         return true;
     }
@@ -211,15 +221,16 @@ bool HorizonCheck(float3 x, float3 u)
         return true;
     }
 
-    // Check if stuck in orbit
+    // Check if stuck in orbit; horizonRad here should change to adsHoriRad
     if (abs(x.x) < 2.0 * horizonRadius) {
 
         // Pre-calculate factors
         float r = x.x;
-        float rs = horizonRadius;
+        float rs = horizonRadius; //keep this rs
         float th = x.y;
         float sth = sin(th);
-        float A = 1.0 - (rs / r);
+        // adding k^2 r^2, doesnt change much visually
+        float A = 1.0 - (rs / r) + (k*k * r*r);
         float a = sqrt(A);
 
         // Calculate motion constants
@@ -249,6 +260,7 @@ bool DiskCheck(float3 x, float3 xLast)
 
     // Check if within accretion disk bounds
     float r_ave = (x.x + xLast.x) / 2.0;
+    // use adsHoriRad here
     if (r_ave < 1.5 * horizonRadius || r_ave > diskMax) { return false; }
 
     // If passed, return true
@@ -261,6 +273,7 @@ float VolumetricDiskBrightness(float3 x, float3 xLast, float t)
     // Calculate position along disk
     float r = (x.x + xLast.x) / 2.0;
     float phi = (x.z + xLast.z) / 2.0;
+    // use adsHoriRad here
     float rNorm = (r - 3.0 * horizonRadius) / (diskMax - 3.0 * horizonRadius);
 
     // Calculate starting position
@@ -297,6 +310,7 @@ float VolumetricDiskBrightness(float3 x, float3 xLast, float t)
     }
 
     // Reduce intensity over distance
+    // use adsHoriRad here
     float falloff = rNorm < 0.0 ? exp(falloffRate * rNorm * diskMax / horizonRadius) : 1.0;
     volumetricValue *= falloff;
 
@@ -311,20 +325,24 @@ float4 GetDiskColor(float3 x, float3 xLast, float t)
     float rEval = (x.x + xLast.x) / 2.0;
     float phEval = (x.z + xLast.z) / 2.0;
     uv.x = phEval / (2.0 * PI);
+    // use adsHoriRad here
     uv.y = (abs(rEval) - 3.0 * horizonRadius) / (diskMax - 3.0 * horizonRadius);
 
     // Sample noise texture
     float texColor = VolumetricDiskBrightness(x, xLast, t);
 
     // Reduce intensity over distance
+    // use adsHoriRad here
     float falloff = uv.y < 0.0 ? exp(falloffRate * uv.y * diskMax / horizonRadius) : max((1.0 - uv.y), 0.0);
     texColor *= falloff;
 
     // Calculate temperature
+    // use adsHoriRad here
     float rFactor = pow(abs(3.0 * horizonRadius / rEval), 0.75);
     float T = diskTemp * rFactor;
 
     // Calculate doppler shift
+    // use adsHoriRad here
     float v = sqrt(horizonRadius / (2.0 * rEval));
     float gamma = 1.0 / sqrt(1.0 - (v * v));
     float3 xDiff = xLast - x;
@@ -335,6 +353,7 @@ float4 GetDiskColor(float3 x, float3 xLast, float t)
     texColor *= pow(abs(shift), beamExponent);
 
     // Calculate gravitational redshift
+    // use adsHoriRad here
     shift *= sqrt(1 - (horizonRadius / rEval));
 
     // Sample blackbody texture
@@ -398,6 +417,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     }
 
     // Check for escape condition
+    // use adsHoriRad here
     if (abs(x.x) > escapeDistance * horizonRadius)
     {
         // Evaluate skybox texture
