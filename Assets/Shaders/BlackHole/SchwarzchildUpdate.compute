@@ -1,9 +1,9 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
-
 // Constants
 static const float PI = 3.14159265f;
-static const float k = 0.05;
+static const float k = 0.01;
+static float adsHoriRad;
 
 // Output parameters
 RWTexture2D<float4> Position;
@@ -35,9 +35,9 @@ float poleMargin;
 float poleStep;
 bool hardCheck;
 
-// Physical parameters
+// Physical parameters, are all of these in unity?
 float escapeDistance;
-float horizonRadius;
+float horizonRadius; // what if we disconnect this from unity and hardcode it?
 float diskMax;
 float diskTemp;
 float falloffRate;
@@ -45,7 +45,6 @@ float beamExponent;
 float time;
 float rotationSpeed;
 float timeDelayFactor;
-float adsHoriRad
 
 
 // Brightness parameters
@@ -125,7 +124,8 @@ void CalculateGeodesicDerivative(float3 x, float3 u, out float3 dx, out float3 d
 {
     // Pre-calculate factors
     float r = x.x;
-    float rs = horizonRadius;
+    //float rs = horizonRadius;
+    float rs = adsHoriRad;
     float th = x.y;
     float sth = sin(th);
 	
@@ -182,7 +182,7 @@ float CalculateStepSize(float3 x, float3 u)
     }
     
     // Check if near horizon
-    if (abs(x.x) < 2.0 * rs)
+    if (abs(x.x) < 2.0 * adsHoriRad)
     {
         // Near horizon regime
         return timeStep;
@@ -197,7 +197,7 @@ float CalculateStepSize(float3 x, float3 u)
     else
     {
         // Far from horizon, approaching
-        return max(timeStep * (abs(x.x) - (2.0 * rs)), timeStep);
+        return max(timeStep * (abs(x.x) - (2.0 * adsHoriRad)), timeStep);
         }
 }
 
@@ -222,7 +222,7 @@ bool HorizonCheck(float3 x, float3 u)
     }
 
     // Check if stuck in orbit; horizonRad here should change to adsHoriRad
-    if (abs(x.x) < 2.0 * horizonRadius) {
+    if (abs(x.x) < 2.0 * adsHoriRad) {
 
         // Pre-calculate factors
         float r = x.x;
@@ -238,7 +238,7 @@ bool HorizonCheck(float3 x, float3 u)
         float C = u.z * u.z / (E * E);
 
         // Check if geodesic originates inside of horizon
-        if (C > (27.0 / 4.0) * rs * rs) {
+        if (C > (27.0 / 4.0) * adsHoriRad * adsHoriRad) {
             return true;
         }
         else {
@@ -274,7 +274,7 @@ float VolumetricDiskBrightness(float3 x, float3 xLast, float t)
     float r = (x.x + xLast.x) / 2.0;
     float phi = (x.z + xLast.z) / 2.0;
     // use adsHoriRad here
-    float rNorm = (r - 3.0 * horizonRadius) / (diskMax - 3.0 * horizonRadius);
+    float rNorm = (r - 3.0 * adsHoriRad) / (diskMax - 3.0 * adsHoriRad);
 
     // Calculate starting position
     float3 startPos;
@@ -311,7 +311,7 @@ float VolumetricDiskBrightness(float3 x, float3 xLast, float t)
 
     // Reduce intensity over distance
     // use adsHoriRad here
-    float falloff = rNorm < 0.0 ? exp(falloffRate * rNorm * diskMax / horizonRadius) : 1.0;
+    float falloff = rNorm < 0.0 ? exp(falloffRate * rNorm * diskMax / adsHoriRad) : 1.0;
     volumetricValue *= falloff;
 
     return volumetricValue;
@@ -326,24 +326,24 @@ float4 GetDiskColor(float3 x, float3 xLast, float t)
     float phEval = (x.z + xLast.z) / 2.0;
     uv.x = phEval / (2.0 * PI);
     // use adsHoriRad here
-    uv.y = (abs(rEval) - 3.0 * horizonRadius) / (diskMax - 3.0 * horizonRadius);
+    uv.y = (abs(rEval) - 3.0 * adsHoriRad) / (diskMax - 3.0 * adsHoriRad);
 
     // Sample noise texture
     float texColor = VolumetricDiskBrightness(x, xLast, t);
 
     // Reduce intensity over distance
     // use adsHoriRad here
-    float falloff = uv.y < 0.0 ? exp(falloffRate * uv.y * diskMax / horizonRadius) : max((1.0 - uv.y), 0.0);
+    float falloff = uv.y < 0.0 ? exp(falloffRate * uv.y * diskMax / adsHoriRad) : max((1.0 - uv.y), 0.0);
     texColor *= falloff;
 
     // Calculate temperature
     // use adsHoriRad here
-    float rFactor = pow(abs(3.0 * horizonRadius / rEval), 0.75);
+    float rFactor = pow(abs(3.0 * adsHoriRad / rEval), 0.75);
     float T = diskTemp * rFactor;
 
     // Calculate doppler shift
     // use adsHoriRad here
-    float v = sqrt(horizonRadius / (2.0 * rEval));
+    float v = sqrt(adsHoriRad / (2.0 * rEval));
     float gamma = 1.0 / sqrt(1.0 - (v * v));
     float3 xDiff = xLast - x;
     float incidence = xDiff.z * rEval / length(xDiff * float3(1.0, rEval, rEval));
@@ -354,7 +354,7 @@ float4 GetDiskColor(float3 x, float3 xLast, float t)
 
     // Calculate gravitational redshift
     // use adsHoriRad here
-    shift *= sqrt(1 - (horizonRadius / rEval));
+    shift *= sqrt(1 - (adsHoriRad / rEval));
 
     // Sample blackbody texture
     uv.x = (shift - 0.5) / (2.0 - 0.5);
@@ -380,9 +380,41 @@ float4 Blend(float4 foreColor, float4 backColor)
     return outColor;
 }
 
+void ADSradius()
+{
+    float checkCosmo = k;
+    if (checkCosmo==0){adsHoriRad = horizonRadius;}
+
+    else
+    {
+        // set up delta
+        float rs = horizonRadius;
+        float delta = ((k*k)*(rs*rs)/4.0) + (1.0/27.0);
+
+        // now calculate the U's
+        float q = -k * rs;
+        float u1 =  k * rs/2.0 + sqrt(delta);
+        float u2 =  k * rs/2.0 - sqrt(delta);
+
+    
+        float expo = 0.333;
+        float u1_3 = pow(u1, expo);
+        float u2_3 = pow(abs(u2), expo);
+
+        // calculate t
+        float t =  u1_3 - u2_3;
+	
+        // now for the new ADS radius
+        adsHoriRad = t/k;
+    }
+
+}
+
 [numthreads(8, 8, 1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
+    ADSradius();
+    //adsHoriRad = horizonRadius;
     // Break if already failed bounds check
     if (isComplete[id.xy] == 1) { return; }
 
@@ -418,7 +450,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
     // Check for escape condition
     // use adsHoriRad here
-    if (abs(x.x) > escapeDistance * horizonRadius)
+    if (abs(x.x) > escapeDistance * adsHoriRad)
     {
         // Evaluate skybox texture
         float3 outRay = ToCartesianScalar(x.xyz).xyz;
