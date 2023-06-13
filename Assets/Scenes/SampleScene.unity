@@ -360,8 +360,8 @@ MonoBehaviour:
   saveToFile: 1
   timeStampFile: 0
   frameStampFile: 1
-  filenamePrefix: Schwarz_0_05_k_0_spin_Ap
-  subfolder: Schwarz_0_05_k_0_spin_Ap
+  filenamePrefix: Schwarz_0_spin
+  subfolder: Schwarz_0_spin
   exitOnComplete: 1
   saveType: 0
   cameraState: 0
